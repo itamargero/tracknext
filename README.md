@@ -1,19 +1,33 @@
-# TrackNext
+# TrackNext: Next.js Marketing Attribution and UTM Tracking
 
 [![CI](https://github.com/itamargero/tracknext/actions/workflows/ci.yml/badge.svg)](https://github.com/itamargero/tracknext/actions/workflows/ci.yml)
 
-**First, middle, and last marketing touch attribution for Next.js.**
+TrackNext is an open source, server-side attribution library for Next.js. Capture UTM campaigns, marketing referrals, and first, middle, and last marketing touches, then save that history with a signup, lead, or checkout record in your own database.
 
-TrackNext captures marketing arrivals on your server and makes their attribution available when someone signs up, submits a lead, or starts checkout. Keep the data in your own database. No tracking service or browser SDK is required.
+It runs in Next.js Proxy without a frontend SDK, injected tracking script, or analytics-provider account. Start with first-party cookies and add durable server storage when you need a longer history. The TypeScript core has no runtime dependencies; the Next.js adapter uses your installed Next.js.
+
+Use TrackNext to answer which campaign first brought someone to your site, which marketing sources brought them back, and which source preceded a conversion:
 
 ```text
 Google search → newsletter → LinkedIn campaign → direct return → signup
      first          middle           last
 ```
 
-TrackNext records acquisition evidence, rather than pageviews, internal navigation, or product events. It does not send data to analytics or advertising providers. The core has no runtime dependencies; the Next.js adapter uses your installed Next.js.
+Internal page movement does not create marketing touches. TrackNext collects acquisition evidence and exposes typed data; your application decides where to save it. It does not upload pageviews, interactions, or conversion events to a third party.
 
-This is an initial, unpublished release. The `tracknext` npm name is provisional and its availability has not been verified.
+**Release status:** v0.1.0 is not published to npm. The `tracknext` package name is provisional; use the local tarball installation below.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Install TrackNext](#install-tracknext)
+- [Next.js quick start](#nextjs-attribution-middleware-quick-start)
+- [Compose with an existing proxy](#compose-with-an-existing-nextjs-proxy)
+- [First, middle, and last touch rules](#first-touch-middle-touch-and-last-touch-attribution)
+- [Configuration](#configuration) and [snapshot reference](#attribution-snapshot-reference)
+- [Durable storage](#optional-durable-server-storage) and [PostgreSQL recipe](#postgresql-recipe)
+- [Limits](#limits-and-data-handling), [privacy](#privacy-belongs-to-the-host-application), and [FAQ](#faq)
+- [Development](#development) and [collaboration](#collaborate)
 
 ## Requirements
 
@@ -23,23 +37,28 @@ This is an initial, unpublished release. The `tracknext` npm name is provisional
 
 The integration uses Next.js 16's `proxy.ts` convention. Next.js 15 and older are outside this release's supported range. Use a current patched Next.js release in production; the minimum version defines the compatibility floor.
 
-## Install locally
+## Install TrackNext
 
-Until a package is published, build a tarball from this checkout:
+Clone the source and build a tarball using Node.js 22.18.0+:
 
 ```sh
 git clone https://github.com/itamargero/tracknext.git
 cd tracknext
 npm ci
 npm pack
+```
 
-# In your Next.js application; adjust the tarball path
-npm install ../tracknext/tracknext-0.1.0.tgz
+From your Next.js application's directory, install the tarball (adjust the path):
+
+```sh
+npm install /path/to/tracknext/tracknext-0.1.0.tgz
 ```
 
 `npm pack` builds the package automatically. After publication under the final package name, installation will be `npm install tracknext` if that name is retained.
 
-## Quick start
+## Next.js attribution middleware: quick start
+
+Next.js 16 uses `proxy.ts` for the request interception previously called middleware. Add one tracker, capture eligible arrivals in Proxy, and read the result at conversion time.
 
 ### 1. Create your tracker
 
@@ -54,7 +73,7 @@ export const attribution = createAttribution({
 
 An owned apex includes its subdomains. The current request hostname also counts as owned automatically. Set `siteHosts` explicitly if the application uses multiple domains or moves visitors between subdomains.
 
-### 2. Add Proxy
+### 2. Capture marketing arrivals in Proxy
 
 ```ts
 // src/proxy.ts
@@ -70,7 +89,7 @@ export const config = {
 
 For a project without `src/`, put these files in `lib/` and `proxy.ts` at the project root instead. Adjust the import alias to match your application.
 
-### 3. Save attribution at conversion
+### 3. Save attribution at signup or conversion
 
 Read the cookie in a Server Action or Route Handler, after validating the submitted data. Reading `cookies()` during rendering can make a route dynamic, so a root-layout reader is unnecessary.
 
@@ -101,7 +120,7 @@ The database call illustrates an application with a JSON attribution column and 
 
 For checkout, save the snapshot alongside your checkout record before redirecting to the payment provider. Link the later webhook to that record; a payment-provider webhook does not carry the visitor's browser cookies.
 
-## Already have a proxy?
+## Compose with an existing Next.js proxy
 
 Call `capture` on the response produced by your existing proxy. It preserves that response's headers, auth cookies, redirect, or rewrite.
 
@@ -123,7 +142,7 @@ export const config = {
 
 For an async auth or internationalization proxy, await its response before passing it to `capture`. Keep the existing provider's matcher where required, and pass the final response through capture once. Capture runs only on eligible HTML document GET arrivals; it filters API/assets, Flight requests, fetches, prefetches, and prerenders, and skips error responses. Redirect responses can retain the original arrival.
 
-## What counts as a touch?
+## First-touch, middle-touch, and last-touch attribution
 
 TrackNext applies these rules in order:
 
@@ -139,7 +158,7 @@ Within 30 minutes of the latest recorded touch, the same attribution evidence is
 
 The built-in classifier recognizes search engines, social networks, AI assistants, Android app referrers, and ordinary referrals. Search classification restricts known search front-ends: Google Docs and Gmail web referrers are ordinary referrals. Referrer-domain matching requires a domain-label boundary.
 
-### Campaigns and click IDs
+### UTM parameters, referrers, and click IDs
 
 The original sanitized UTM values retain their case under `touch.utm`. Derived `source` and `medium` are normalized separately. For example, `utm_source=NewsLetter&utm_medium=EMAIL` produces `source: 'newsletter'` and `medium: 'email'`, while retaining `NewsLetter` and `EMAIL` as campaign evidence.
 
@@ -214,9 +233,9 @@ Cookie history is bounded. When necessary, TrackNext removes the oldest intermed
 
 `totalTouchCount` counts recorded touches after deduplication. `droppedTouchCount` counts touches omitted from the retained history. `historyTruncated` reports missing touches; individual `fieldsTruncated` flags report reduced field detail. A journey can have truncated fields without having lost an entire touch.
 
-## Snapshot shape
+## Attribution snapshot reference
 
-A read returns `AttributionSnapshot | null`. An absent, malformed, or expired cookie yields `null`. Timestamps are Unix milliseconds.
+Cookie-mode `read` returns `AttributionSnapshot | null`: an absent, malformed, or expired cookie yields `null`. Durable-mode `read` returns a promise and can recover from a surviving visitor ID. Timestamps are Unix milliseconds.
 
 ```ts
 import type { AttributionSnapshot, AttributionTouch } from 'tracknext';
@@ -338,20 +357,17 @@ Choose timeout values and connection-pool limits for your deployment. Connection
 Clear cookie-only attribution on a response returned to the browser:
 
 ```ts
+// src/app/api/attribution/route.ts
 import { NextResponse } from 'next/server';
 import { attribution } from '@/lib/attribution';
 
-const response = NextResponse.json({ cleared: true });
-attribution.clear(response);
+export function DELETE() {
+  const response = NextResponse.json({ cleared: true });
+  return attribution.clear(response);
+}
 ```
 
-For durable mode, supply the incoming cookie store so its server record can also be deleted:
-
-```ts
-await attribution.clear(response, await cookies());
-```
-
-Route Handlers are a convenient place to return these responses. Protect any application endpoint according to your own requirements. Durable deletion errors are reported through `onStoreError`; cookie clearing does not guarantee deletion from an unavailable store, so use your own retention/deletion workflow when needed.
+For durable mode, make the handler async, import `cookies` from `next/headers`, and return `await attribution.clear(response, await cookies())` so the server record can also be deleted. Protect the endpoint according to your application's requirements. Durable deletion errors are reported through `onStoreError`; cookie clearing does not guarantee deletion from an unavailable store, so use your own retention/deletion workflow when needed.
 
 ## Framework-independent core
 
@@ -377,8 +393,33 @@ const snapshot = tracker.read(result.cookieValue);
 - Cookie-only updates are best effort across simultaneous requests or tabs; competing responses can overwrite one another. Use atomic durable storage for known-ID concurrency.
 - There is no cross-device identity, fingerprinting, automatic user linking, automatic cross-domain tracking, or revenue-allocation model. Persist snapshots against your own records at conversion time.
 - Cookies and campaign claims are unsigned, user-controlled marketing input. Never use them for authorization, billing decisions, fraud prevention, or proof that an advertisement occurred.
-- Tracking has no built-in consent gate. Site owners control their integration, disclosures, and retention policies. First-party storage does not itself establish a universal compliance guarantee.
 - TrackNext does not capture interactions, session replays, or pageview events. No client JavaScript is injected and no data is uploaded to a third-party endpoint.
+
+## Privacy belongs to the host application
+
+TrackNext supplies the attribution engine. Your application decides its privacy, consent, cookie, retention, disclosure, and deletion policies, including whether and when to call `capture`. There is no built-in consent banner or consent gate, and the library does not guarantee legal compliance. Keep those decisions in the application that knows its users and requirements.
+
+## FAQ
+
+### Does TrackNext need frontend JavaScript?
+
+No. The Next.js adapter captures arrivals on the server and sets first-party `HttpOnly` cookies. It does not inject scripts or require a browser SDK.
+
+### What do first, middle, and last touch mean?
+
+The first touch is the journey's first eligible arrival, which can be direct. Middle touches are the retained marketing arrivals between the first and latest touch. The last touch is the latest recorded arrival; direct returns do not replace marketing attribution. History limits can remove intermediate touches, which the snapshot reports.
+
+### Can I use Prisma or Drizzle?
+
+Yes. Save the conversion snapshot with your existing ORM. Cookie mode needs no database; optional durable history requires an atomic `AttributionStore` adapter. The PostgreSQL recipe demonstrates the contract without requiring either ORM.
+
+### Which Next.js versions are supported?
+
+Next.js 16.x, starting at 16.0.0. The adapter uses `proxy.ts`; Next.js 15 and earlier are outside this release's supported range. Use a current patched release in production.
+
+### What happens if attribution cookies are deleted?
+
+Cookie-only history is lost unless you already saved a snapshot. Durable mode can recover using its surviving visitor ID cookie. If both cookies disappear, it cannot reconnect an anonymous visitor to their earlier history. Cross-device tracking is not provided.
 
 ## Development
 
@@ -391,6 +432,12 @@ npm run test:e2e
 ```
 
 Run `npm run dev:example` for the local Next.js example. See [CONTRIBUTING.md](CONTRIBUTING.md) for the test and compatibility workflow.
+
+## Collaborate
+
+Contributions are welcome: Prisma/Drizzle and other storage adapters, source-classification edge cases, browser behavior, documentation, examples, and tests. Open an [issue](https://github.com/itamargero/tracknext/issues) or a [pull request](https://github.com/itamargero/tracknext/pulls), and see [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
+
+Created by [Itamar Gero](https://github.com/itamargero).
 
 ## License
 
