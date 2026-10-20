@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Next.js ${{ matrix.next }} / Node.js 22
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TRACKNEXT_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    strategy:
+      fail-fast: false
+      matrix:
+        next: ['16.0.0', '16.4.2']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Select compatibility version
+        run: npm install --no-save --package-lock=false next@${{ matrix.next }}
+      - run: npm run check
+      - run: npm run test:package
+      - run: npm run test:postgres
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build:example
+      - run: npm run test:e2e
+      - name: Upload browser failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-results-next-${{ matrix.next }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
