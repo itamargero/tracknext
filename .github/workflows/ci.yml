@@ -39,7 +39,8 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Select compatibility version
-        run: npm install --no-save --package-lock=false next@${{ matrix.next }}
+        # Avoid npm's optional-peer resolver crash during matrix version swaps.
+        run: npm install --no-save --package-lock=false --legacy-peer-deps next@${{ matrix.next }}
       - run: npm run check
       - run: npm run test:package
       - run: npm run test:postgres

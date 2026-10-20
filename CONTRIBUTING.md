@@ -49,7 +49,7 @@ npm run test:e2e
 The compatibility matrix uses Next.js 16.0.0 and 16.4.2 on Node.js 22.18.0+. Test a change that affects Proxy, cookies, redirects, request filtering, or package imports against both versions:
 
 ```sh
-npm install --no-save --package-lock=false next@16.0.0
+npm install --no-save --package-lock=false --legacy-peer-deps next@16.0.0
 npm run check
 npm run build:example
 npm run test:e2e
@@ -58,6 +58,8 @@ npm ci
 ```
 
 Use a current patched Next.js release in production. The older matrix entry tests the compatibility floor.
+
+The compatibility swap uses `--legacy-peer-deps` to avoid npm's optional-peer resolver crash (`edgesOut`) while changing test versions. Normal `npm ci` and consumer tarball installs do not need this flag.
 
 ## PostgreSQL integration test
 
